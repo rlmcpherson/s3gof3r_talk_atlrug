@@ -1,0 +1,209 @@
+
+s3gof3r
+Solving a highly concurrent problem in go
+
+13 November 2013
+
+Randall McPherson
+rlmcpherson@gmail.com
+@morsegeek
+
+# .image s3gof3r/images/gopher.png
+
+* gof3r
+- streaming, concurrent transfers to Amazon S3
+- end-to-end integrity checking
+- command-line interface 
+- 34 times faster
+
+* The Problem: CodeGuard backups and S3
+- backups exceeding half terabyte
+- critical business data
+- driving Amazon EC2 costs
+
+* Previous solution: aws sdk
+- slow, and gets slower
+- brittle, large transfers often fail
+- no integrity checking -> corruption
+- 9 GB object average time:
+   Multipart Upload: 40m30s,  3.8 MB/s (31 mbps)
+   Download: 46m38s,  3.4 MB/s (27 mbps)
+
+* Isn't there already a solution?
+- other s3 tools?
+- reliability issues for large objects
+- no streaming support
+
+#* gof3r
+#
+#
+
+#* gof3r: features
+#- streaming concurrent multipart uploads
+#- streaming concurrent downloads
+#- end-to-end integrity checking
+#- command line interface
+
+#* gof3r: integrity checks and retries
+#- check every part on both uploads and downloads, retry if no match
+#- check the integrity of the entire stream in parallel (md5 files)
+#- check the md5 hash of hashes on multipart upload
+
+* Why use Go? Concurrency!
+- Communicating Sequential Processes
+- C.A.R. Hoare (1978)
+- in the language and runtime, not in a library
+- fundamentally changes how programs are structured
+- vastly simplified gof3r
+
+
+* Go Is...
+- Compiled 
+- Statically typed (duck typing via implicit interfaces)
+- Concise, readable syntax
+- Concurrency built-in
+- Garbage-collected 
+- Object Oriented 
+- Truly open source (BSD licensed)
+
+* Hello World Server
+
+.play -numbers s3gof3r/helloserver.go
+
+.link http://127.0.0.1:8080/ATLRUG
+
+* Go Concurrency: goroutines and channels
+
+* A Goroutine: 
+
+is an independently executing function, launched by a go statement
+    
+   go f()
+   go function(1, 2)
+
+Has its own call stack which starts with 4KB and grows as required
+
+Is not a thread, but is multiplexed dynamically onto threads by the go runtime
+
+There can be one thread for thousands of go routines
+
+Is much cheaper than a thread (8 MB default stack in linux)
+
+* Channels
+
+Provide a connection between two goroutines, allowing them to communicate.
+
+Synchronize: A sender and receiver must both be ready, otherwise we wait (block) 
+ 
+  // declare and initialize
+  chan := make(chan int)
+  
+  // send on a channel
+  chan <- 7
+  
+  // receive from a channel
+  n := <-chan
+
+
+Don't communicate by sharing memory, share memory by communicating. - Rob Pike
+
+
+#* PutWriter
+
+#.image s3gof3r/images/putter.png
+
+#* GetReader
+
+#.image s3gof3r/images/getter.png
+
+* gof3r: channels and goroutines
+concurrent get:
+- find out how large an object is
+- break up an object into chunks
+- sign each request with Amazon AWS keys
+- request each chunk from S3
+- download each chunk from S3
+- write out all the data sequentially to arbitrarily sized buffers (Reader Interface)
+- handle or return any errors that occur, as they occur
+- clean up
+- calculate an md5 hash over the sequential stream
+
+* gof3r: initialize chunks
+
+.code s3gof3r/s3gof3r/getter.go  /STARTINIT/,/STOPINIT/
+
+* gof3r: workers
+
+.code s3gof3r/s3gof3r/getter.go  /STARTWORKER/,/STOPWORKER/
+
+* gof3r: get data, send to read channel
+
+.code s3gof3r/s3gof3r/getter.go  /STARTGET/,/STOPGET/
+
+* Performance
+
+112 MB/s avg. (950 mbps)
+9 GB = 1m20s
+
+
+* Results
+- Fastest streaming s3 client 
+- End-to-end integrity checking (MD5) = no data corruption over the wire
+- 3 months, 1 Petabyte, no failures in production
+
+* Production Use: streaming to and from tar
+Download:
+
+  shell_command = "gof3r --down --url=#{url} --md5-checking=file | tar -zx"
+
+Upload:
+
+  shell_command = "tar -czf - #{backup_dir} | gof3r --up --url=#{url} #{headers} --md5-checking=file"
+
+* gof3r is open source
+
+.link http://godoc.org/github.com/rlmcpherson/s3gof3r
+
+If you need fast, robust access to S3, check it out
+
+godoc: Like rdoc
+
+* Interested in problems like this? CodeGuard is Hiring
+
+.image s3gof3r/images/cg_beers_provided.png 
+
+* Problems with Go?
+- Doesn't have x feature
+- no generics 
+- verbose error handling
+- dependency management (a la Bundler) is an issue
+
+* Why Learn Go?
+
+A Tool for Solving Concurrent Problems
+
+- excellent tooling
+- easy cross-compilation 
+- statically-linked binaries = no dependencies
+- well-written, coherent standard library
+- _fast_ compilation (go run, feels like a scripting language)
+
+#* Get started in go
+
+#Go Tour (on your phone too)
+#.link http://tour.golang.org 
+
+#* What does Go offer the Rubyist? 
+#A tool for solving concurrent problems.
+#
+#I was asked a few weeks ago, "What was the biggest surprise you encountered rolling out Go?" I knew the answer instantly: Although we expected C++ programmers to see Go as an alternative, instead most Go programmers come from languages like Python and Ruby. Very few come from C++...
+#
+#_Python_and_Ruby_programmers_come_to_Go_because_they_don't_have_to_surrender_much_expressiveness,_but_gain_performance_and_get_to_play_with_concurrency._
+#
+#C++ programmers don't come to Go because they have fought hard to gain exquisite control of their programming domain, and don't want to surrender any of it. To them, software isn't just about getting the job done, it's about doing it a certain way.
+#
+#The issue, then, is that Go's success would contradict their world view.
+#
+#And we should have realized that from the beginning. People who are excited about C++11's new features are not going to care about a language that has so much less.  Even if, in the end, it offers so much more.
+#    --Rob Pike, (Less is Exponentially More)
+#
